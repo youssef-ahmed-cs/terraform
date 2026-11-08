@@ -5,6 +5,8 @@ terraform {
       version = "~> 3.0"
     }
   }
+
+  required_version = ">= 1.1.0"
 }
 
 provider "azurerm" {
@@ -14,12 +16,17 @@ provider "azurerm" {
 # Resource Group
 resource "azurerm_resource_group" "rg" {
   name     = "devcommunity-rg-tf"
-  location = "polandcentral"
+  location = "belgiumcentral"
+
+  tags = {
+    environment = "dev&test"
+    value       = "devcommunity-db"
+  }
 }
 
 # MySQL Flexible Server
 resource "azurerm_mysql_flexible_server" "mysql" {
-  name                = "devcommunity-mysql-unique"
+  name                = "devcommunity-mysql-db"
   resource_group_name = azurerm_resource_group.rg.name
   location            = azurerm_resource_group.rg.location
 
@@ -31,7 +38,7 @@ resource "azurerm_mysql_flexible_server" "mysql" {
   version               = "8.0.21"
 
   storage {
-    size_gb = 20
+    size_gb = 32
   }
 }
 
