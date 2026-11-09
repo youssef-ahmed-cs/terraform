@@ -11,59 +11,125 @@ provider "azurerm" {
   features {}
 }
 
-# Resource Group
+variable "prefix" {
+  default = "learn-tf"
+}
+
 resource "azurerm_resource_group" "rg" {
-  name     = "devcommunity-rg-tf"
-  location = "belgiumcentral"
+  name     = "${var.prefix}-resources"
+  location = "polandcentral"
+}
+
+resource "azurerm_virtual_network" "main" {
+  name                = "${var.prefix}-network"
+  address_space       = ["10.0.0.0/16"]
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+}
+
+resource "azurerm_subnet" "internal" {
+  name                 = "internal"
+  resource_group_name  = azurerm_resource_group.rg.name
+  virtual_network_name = azurerm_virtual_network.main.name
+  address_prefixes     = ["10.0.2.0/24"]
+}
+
+resource "azurerm_public_ip" "main" {
+  name                = "${var.prefix}-public-ip"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+
+  allocation_method = "Static"
+  sku               = "Standard"
+}
+
+resource "azurerm_network_security_group" "main" {
+  name                = "${var.prefix}-nsg"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+
+  security_rule {
+    name                       = "Allow-SSH"
+    priority                   = 100
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "22"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+  }
+
+  security_rule {
+  name                       = "Allow-HTTP"
+  priority                   = 110
+  direction                  = "Inbound"
+  access                     = "Allow"
+  protocol                   = "Tcp"
+  source_port_range          = "*"
+  destination_port_range     = "80"
+  source_address_prefix      = "*"
+  destination_address_prefix = "*"
+}
+
+}
+
+resource "azurerm_network_interface" "main" {
+  name                = "${var.prefix}-nic"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+
+  ip_configuration {
+    name                          = "testconfiguration1"
+    subnet_id                     = azurerm_subnet.internal.id
+    private_ip_address_allocation = "Dynamic"
+    public_ip_address_id          = azurerm_public_ip.main.id
+  }
+}
+
+resource "azurerm_network_interface_security_group_association" "main" {
+  network_interface_id      = azurerm_network_interface.main.id
+  network_security_group_id = azurerm_network_security_group.main.id
+}
+
+resource "azurerm_virtual_machine" "main" {
+  name                  = "${var.prefix}-vm"
+  location              = azurerm_resource_group.rg.location
+  resource_group_name   = azurerm_resource_group.rg.name
+  network_interface_ids = [azurerm_network_interface.main.id]
+  vm_size               = "Standard_B2ts_v2"
+
+  # Uncomment this line to delete the OS disk automatically when deleting the VM
+  # delete_os_disk_on_termination = true
+
+  # Uncomment this line to delete the data disks automatically when deleting the VM
+  # delete_data_disks_on_termination = true
+
+  storage_image_reference {
+    publisher = "Canonical"
+    offer     = "0001-com-ubuntu-server-jammy"
+    sku       = "22_04-lts"
+    version   = "latest"
+  }
+
+  storage_os_disk {
+    name              = "myosdisk1"
+    caching           = "ReadWrite"
+    create_option     = "FromImage"
+    managed_disk_type = "Standard_LRS"
+  }
+
+  os_profile {
+    computer_name  = "azurevm"
+    admin_username = "youssef"
+    admin_password = "A44611697Yy=***"
+  }
+
+  os_profile_linux_config {
+    disable_password_authentication = false
+  }
 
   tags = {
-    environment = "dev&test"
-    value       = "devcommunity-db"
+    environment = "staging"
   }
-}
-
-# MySQL Flexible Server
-resource "azurerm_mysql_flexible_server" "mysql" {
-  name                = "devcommunity-mysql-db"
-  resource_group_name = azurerm_resource_group.rg.name
-  location            = azurerm_resource_group.rg.location
-
-  administrator_login    = "youssef419386"
-  administrator_password = var.mysql_admin_password
-
-  backup_retention_days = 7
-  sku_name              = "B_Standard_B1ms"
-  version               = "8.0.21"
-
-  storage {
-    size_gb = 32
-  }
-}
-
-# MySQL Database
-resource "azurerm_mysql_flexible_database" "database" {
-  name                = "devcommunity_db"
-  resource_group_name = azurerm_resource_group.rg.name
-  server_name         = azurerm_mysql_flexible_server.mysql.name
-  charset             = "utf8mb4"
-  collation           = "utf8mb4_unicode_ci"
-}
-
-# Firewall Rule - Your Public IP
-resource "azurerm_mysql_flexible_server_firewall_rule" "my_ip" {
-  name                = "allow-my-ip"
-  resource_group_name = azurerm_resource_group.rg.name
-  server_name         = azurerm_mysql_flexible_server.mysql.name
-
-  start_ip_address = var.client_ip
-  end_ip_address   = var.client_ip
-}
-
-# Outputs
-output "mysql_server_fqdn" {
-  value = azurerm_mysql_flexible_server.mysql.fqdn
-}
-
-output "mysql_database_name" {
-  value = azurerm_mysql_flexible_database.database.name
 }
